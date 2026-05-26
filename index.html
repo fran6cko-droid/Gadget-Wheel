@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -103,6 +103,7 @@
         }
 
         .display-box {
+            position: relative;
             flex: 1;
             background: #2d2d34;
             padding: 20px;
@@ -131,6 +132,14 @@
             font-weight: 600;
             color: #4da8da;
             margin: 0;
+            z-index: 2;
+        }
+
+        #loading-text {
+            display: none;
+            font-style: italic;
+            color: #aaa;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -146,12 +155,12 @@
 
         <div class="display-box" id="display-box">
             <div id="item-title">Spin the wheel to pick a gadget!</div>
+            <div id="loading-text">Loading image...</div>
             <img id="item-image" src="" alt="Selected Item">
         </div>
     </div>
 
     <script>
-        // Master pool source array
         const masterGadgets = [
             { number: "1", title: "1. Solar Charging Backpack", file: "https://www.dropbox.com/scl/fi/kjlkwmzkz10hpmay09wz4/Solar-Charging-Backpack.png?rlkey=coxe6eym9kugw5ojoi5b8zs7s&st=lxqullrx&raw=1" },
             { number: "2", title: "2. Sneakers Cleaning & Odorizing Box", file: "https://www.dropbox.com/scl/fi/twdw2arua61hxzgt07l5p/Sneakers-Cleaning-Odorizing-Box.png?rlkey=3xirmh9z3tkma8izn67krvfgd&st=xv2ukc94&raw=1" },
@@ -166,23 +175,32 @@
             { number: "11", title: "11. Advertising LED Screen Umbrella", file: "https://www.dropbox.com/scl/fi/047c08lrl1pc68rnff9mt/Advertising-Led-Screen-Umbrella.png?rlkey=4qbt7v0h33qp8csnlg456idfo&st=v8gi7v12&raw=1" }
         ];
 
-        // Active mutable copy
         let gadgets = [...masterGadgets];
+
+        // --- NEW PRELOADER ENGINE ---
+        // Forces browser to silently fetch images into background memory immediately on load
+        const preloadedImages = {};
+        masterGadgets.forEach(gadget => {
+            const img = new Image();
+            img.src = gadget.file;
+            preloadedImages[gadget.number] = img;
+        });
+        // ----------------------------
 
         const canvas = document.getElementById("wheel");
         const ctx = canvas.getContext("2d");
         const spinBtn = document.getElementById("spin-btn");
         const itemTitle = document.getElementById("item-title");
         const itemImage = document.getElementById("item-image");
+        const loadingText = document.getElementById("loading-text");
 
         let currentRotation = 0;
         let isSpinning = false;
         let isGameOver = false;
-        let pendingRemovalIndex = null; // Tracks the index to delete on the *next* spin click
+        let pendingRemovalIndex = null;
 
         const colors = ["#ff4757", "#2ed573", "#1e90ff", "#ffa502", "#9b59b6", "#34495e", "#1abc9c", "#e67e22", "#e74c3c", "#57606f", "#20bf6b"];
 
-        // Renders active wheel components visually
         function drawWheel() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             const numSegments = gadgets.length;
@@ -227,10 +245,8 @@
 
         drawWheel();
 
-        // Mechanical trigger handler
         spinBtn.addEventListener("click", () => {
             if (isGameOver) {
-                // Perform complete state rollback
                 gadgets = [...masterGadgets];
                 currentRotation = 0;
                 pendingRemovalIndex = null;
@@ -238,18 +254,17 @@
                 spinBtn.innerText = "SPIN";
                 itemTitle.innerText = "Spin the wheel to pick a gadget!";
                 itemImage.style.display = "none";
+                loadingText.style.display = "none";
                 drawWheel();
                 return;
             }
 
             if (isSpinning) return;
 
-            // Delayed Removal Mechanism: Delete the winner from the previous round right now
             if (pendingRemovalIndex !== null) {
                 gadgets.splice(pendingRemovalIndex, 1);
                 pendingRemovalIndex = null;
                 
-                // If that was the last item, switch immediately to game over state
                 if (gadgets.length === 0) {
                     isGameOver = true;
                     spinBtn.innerText = "RESET";
@@ -258,7 +273,6 @@
                     return;
                 }
                 
-                // Instantly re-adjust the circle slices before starting the spin animation
                 drawWheel();
             }
 
@@ -266,6 +280,7 @@
             spinBtn.disabled = true;
             itemTitle.innerText = "Choosing a creative gadget...";
             itemImage.style.display = "none";
+            loadingText.style.display = "none";
 
             const numSegments = gadgets.length;
             const arc = Math.PI * 2 / numSegments;
@@ -305,15 +320,25 @@
 
             const winner = gadgets[winningIndex];
             
-            // Render winner results to screen while keeping the segment visible on the wheel
             itemTitle.innerText = winner.title;
-            itemImage.src = winner.file;
-            itemImage.style.display = "block";
+            
+            // If image is preloaded and cached, this happens instantly
+            const cachedImg = preloadedImages[winner.number];
+            if (cachedImg && cachedImg.complete) {
+                itemImage.src = winner.file;
+                itemImage.style.display = "block";
+            } else {
+                // Fallback indicator if connection drops or is heavily delayed
+                loadingText.style.display = "block";
+                itemImage.src = winner.file;
+                itemImage.onload = function() {
+                    loadingText.style.display = "none";
+                    itemImage.style.display = "block";
+                };
+            }
 
-            // Save the index to remove it the exact moment the button is pressed next round
             pendingRemovalIndex = winningIndex;
 
-            // If it is the absolute final item left, change text to RESET right away
             if (gadgets.length === 1) {
                 isGameOver = true;
                 spinBtn.innerText = "RESET";
